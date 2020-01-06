@@ -1,0 +1,2 @@
+ns_name: istio-system
+istio_path: "{{istio_dir}}/istio-{{istio_version}}/"

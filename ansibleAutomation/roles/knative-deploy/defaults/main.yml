@@ -1,0 +1,5 @@
+ns_name: istio-system
+knative_path: "{{knative_dir}}/knative-{{knative_version}}/"
+istio_path: "{{istio_dir}}/istio-{{istio_version}}/"
+KIALI_USERNAME: "admin"
+KIALI_PASSWORD: "admin"

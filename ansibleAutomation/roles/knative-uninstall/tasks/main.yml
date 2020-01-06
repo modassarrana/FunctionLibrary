@@ -1,0 +1,11 @@
+- name: uninstall knative
+  include_tasks: uninstall_knative_for_kiali.yml
+  when: profile == "kiali"
+
+- name: uninstall knative
+  include_tasks: uninstall_knative.yml
+  when: profile == "default"
+
+- name: uninstall istio
+  include_tasks: uninstall_istio.yml
+

@@ -1,0 +1,42 @@
+- name: Extract kubernetes server version
+  shell: |
+    kubectl version | sed -En 's/Server Version.*GitVersion.*v([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+).*/\1/p' | tail -1
+  register: ver
+
+- assert:
+    that:
+      - "ver.stdout is version_compare(minimum_cluster_version,'>=')"
+    msg: "Cluster version must be at least {{ minimum_cluster_version }}"
+
+- name: create directory for istio , helm & knative if not exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0777
+    recurse: yes
+  with_items:
+    - "{{ istio_dir }}"
+    - "{{ knative_dir }}"
+    - "{{ helm_dir }}"
+
+- name: Download istio 
+  shell: |
+    export ISTIO_VERSION={{istio_version}}
+    curl -L https://git.io/getLatestIstio | sh -
+  args:
+    chdir: "{{ istio_dir }}"
+
+- name: Download & install helm 
+  shell: |
+    curl -L https://git.io/get_helm.sh -v {{ helm_version }} | bash
+  args:
+    chdir: "{{ helm_dir }}"
+
+- name: Install helm without tiller
+  shell: helm init --client-only
+
+- name: check helm is installed
+  shell: helm help
+  register: helm_ret
+  failed_when: helm_ret.rc > "0"
+

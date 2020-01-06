@@ -1,0 +1,87 @@
+
+- name: Install all the knative (CRDs) using kubectl apply, and wait a few seconds for the CRDs to be committed in the Kubernetes API-server
+  shell: "kubectl apply --selector knative.dev/crd-install=true -f https://github.com/knative/serving/releases/download/v{{knative_version}}/serving.yaml  -f https://github.com/knative/eventing/releases/download/v{{knative_version}}/release.yaml -f https://github.com/knative/eventing-sources/releases/download/v{{knative_version}}/eventing-sources.yaml --filename https://github.com/knative/serving/releases/download/v{{knative_version}}/monitoring-logs-elasticsearch.yaml -f https://raw.githubusercontent.com/knative/serving/v{{knative_version}}/third_party/config/build/clusterrole.yaml"
+  register: crd
+  ignore_errors: true
+  when: knative_version == "0.6.0"
+
+- name: Install all the knative (CRDs) using kubectl apply when knative version > 0.6.0
+  shell: "kubectl apply --selector knative.dev/crd-install=true -f https://github.com/knative/serving/releases/download/v{{knative_version}}/serving.yaml -f https://github.com/knative/eventing/releases/download/v{{knative_version}}/release.yaml -f https://github.com/knative/serving/releases/download/v{{knative_version}}/monitoring-logs-elasticsearch.yaml"
+  register: crd
+  ignore_errors: true
+  when: knative_version is version_compare('0.6.0','>')
+
+- pause: seconds=5
+
+- name: Install knative using kubectl apply
+  shell: "kubectl apply -f https://github.com/knative/serving/releases/download/v{{knative_version}}/serving.yaml --selector networking.knative.dev/certificate-provider!=cert-manager -f https://github.com/knative/eventing/releases/download/v{{knative_version}}/release.yaml -f https://github.com/knative/eventing-sources/releases/download/v{{knative_version}}/eventing-sources.yaml --filename https://github.com/knative/serving/releases/download/v{{knative_version}}/monitoring-logs-elasticsearch.yaml -f https://raw.githubusercontent.com/knative/serving/v{{knative_version}}/third_party/config/build/clusterrole.yaml"
+  register: knative
+  ignore_errors: true
+  when: knative_version == "0.6.0"
+
+- name: Install knative when knative version > 0.6.0
+  shell: "kubectl apply  -f https://github.com/knative/serving/releases/download/v{{knative_version}}/serving.yaml -f https://github.com/knative/eventing/releases/download/v{{knative_version}}/release.yaml -f https://github.com/knative/serving/releases/download/v{{knative_version}}/monitoring-logs-elasticsearch.yaml"
+  register: knative
+  ignore_errors: true
+  when: knative_version is version_compare('0.6.0','>')
+
+- pause: seconds=25
+
+- name: check all serving pods  are up and running
+  shell: "kubectl get pods --namespace knative-serving | grep -i -E 'CrashLoopBackOff|Error' | wc -l"
+  register: serving
+  until: serving.stdout == "0" and serving.stderr != "No resources found."
+  retries: 3
+  delay: 5 
+
+
+- name: check all eventing pods  are up and running
+  shell: "kubectl get pods --namespace knative-eventing | grep -i -E 'CrashLoopBackOff|Error' | wc -l"
+  register: eventing
+  until: eventing.stdout == "0" and eventing.stderr != "No resources found."
+  retries: 2
+  delay: 5
+
+- name: check all sources pods are up and running
+  shell: "kubectl get pods --namespace knative-sources | grep -i -E 'CrashLoopBackOff|Error' | wc -l"
+  register: source
+  until: source.stdout == "0" and source.stderr != "No resources found."
+  retries: 2
+  delay: 5  
+  when: knative_version == "0.6.0"
+
+- name: Check all monitoring pods are up and running
+  shell: "kubectl get pods --namespace knative-monitoring | grep -i -E 'CrashLoopBackOff|Error' | wc -l"
+  register: monitoring
+  until: monitoring.stdout == "0" and monitoring.stderr != "No resources found."
+  retries: 4
+  delay: 5
+  ignore_errors: true
+
+- name: Block for config deployment. Knative resolution for pulling docker image from artifactory repo
+  block:
+  - name: Copy the config deployment file
+    shell: "kubectl get cm -n knative-serving config-deployment -o yaml > {{knative_dir}}/config-deployment.yaml"
+    register: config-deployment
+
+  - name: update the config deployment file with tag digest resolution
+    lineinfile:
+      path: "{{knative_dir}}/config-deployment.yaml"
+      firstmatch: yes
+      insertafter: '^data'
+      line: "  registriesSkippingTagResolving: {{docker_artifactory_repo_url}}"
+  - name: apply the config deployment file to skip tag digest resolution
+    shell: "kubectl apply -f config-deployment.yaml"
+    args:
+      chdir: "{{knative_dir}}"
+  when: docker_artifactory_repo_url is defined
+
+- name: Generate dns config file
+  template:
+    src: "dns-config.yml"
+    dest: "{{role_path}}/../../output/dns-config.yml"
+
+- name: Apply Configure dns
+  shell: kubectl apply -f "{{role_path}}/../../output/dns-config.yml"
+  register: dns-config
+

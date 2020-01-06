@@ -1,0 +1,58 @@
+
+- name: Install all the Istio (CRDs) using kubectl apply, and wait a few seconds for the CRDs to be committed in the Kubernetes API-server
+  shell: "for i in install/kubernetes/helm/istio-init/files/crd*yaml; do kubectl apply -f $i; done"
+  args:
+    chdir: "{{istio_path}}"
+  register: crd
+
+
+- name: create namespace on istio
+  include_tasks: create_namespace.yml
+
+
+- name: secrets for kiali installation in istio
+  include_tasks: create_secrets.yml
+  when: profile == "kiali"
+
+- name: create istio.yaml file with kiali enabled 
+  shell: "helm template --namespace={{ns_name}} --set sidecarInjectorWebhook.enabled=true --set sidecarInjectorWebhook.enableNamespacesByDefault=true --set kiali.enabled=true --set tracing.enabled=true --set grafana.enabled=true --set global.proxy.autoInject=disabled --set global.disablePolicyChecks=true --set gateways.istio-ingressgateway.autoscaleMin=1 --set gateways.istio-ingressgateway.autoscaleMax=1 --set gateways.istio-ingressgateway.resources.requests.cpu=500m --set gateways.istio-ingressgateway.resources.requests.memory=256Mi --set pilot.autoscaleMin=2 --set pilot.traceSampling=100 install/kubernetes/helm/istio > istio.yaml"
+  args:
+    chdir: "{{istio_path}}"
+  when:
+    - profile == "kiali"
+
+- name: create istio.yaml file when kiali is not be configured
+  shell: "helm template --namespace={{ns_name}} --set sidecarInjectorWebhook.enabled=true --set sidecarInjectorWebhook.enableNamespacesByDefault=true --set global.proxy.autoInject=disabled --set global.disablePolicyChecks=true --set prometheus.enabled=false --set mixer.adapters.prometheus.enabled=false --set global.disablePolicyChecks=true --set gateways.istio-ingressgateway.autoscaleMin=1 --set gateways.istio-ingressgateway.autoscaleMax=1 --set gateways.istio-ingressgateway.resources.requests.cpu=500m --set gateways.istio-ingressgateway.resources.requests.memory=256Mi --set pilot.autoscaleMin=2 --set pilot.traceSampling=100 install/kubernetes/helm/istio > istio.yaml"
+  args:
+    chdir: "{{istio_path}}"
+  when: profile == "default"
+
+- name: Install istio with sidecar by applying istio.yaml file
+  shell: "kubectl apply -f istio.yaml"
+  args:
+    chdir: "{{istio_path}}"
+  register: istio
+  ignore_errors: true
+
+- pause: seconds=50
+
+- name: verify the installation . Ensure the corresponding Kubernetes pods 
+  shell: "kubectl get pods -n {{ns_name}} | grep -i -E 'CrashLoopBackOff|Error' | wc -l "
+  register: status
+  until: status.stdout == "0" 
+  retries: 5
+  delay: 6
+  ignore_errors: true
+
+- name: List down the pods ( if failed after waiting 1 min )
+  shell: "kubectl get pods -n {{ns_name}} | grep -i -E 'CrashLoopBackOff|Error'"
+  when: status.stdout != "0"
+
+
+- name: There should be some resource for istio installation
+  shell: "kubectl get pods -n {{ns_name}}"
+  register: status
+  failed_when: "'No resources found.' in status.stderr" 
+
+
+

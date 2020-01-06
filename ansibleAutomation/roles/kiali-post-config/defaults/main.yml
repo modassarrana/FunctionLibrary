@@ -1,0 +1,3 @@
+minimum_cluster_version: 1.11.0
+ns_name: istio-system
+

@@ -1,0 +1,21 @@
+- hosts: kube-master
+  gather_facts: true
+  vars_files:
+    - 'utilities/initial_config.json'
+  
+  pre_tasks:
+    # Require Ansible 2.4 or newer
+    - name: Check Ansible version
+      assert:
+        that: '(ansible_version.major, ansible_version.minor, ansible_version.revision) >= (2, 4, 0)'
+        msg: 'Please install the recommended version 2.4+. Current Ansible version is {{ ansible_version.string }}.'
+      run_once: yes
+
+    - name: Playbook runs correctly only on Linux 
+      assert:
+        that: 'ansible_system == "Linux"'
+        msg: 'The playbook can only be run on Linux'
+      run_once: yes
+
+  roles:
+    - knative-uninstall

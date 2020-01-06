@@ -1,0 +1,60 @@
+- name: Fetch Load balancer Ip from istio-ingressgateway service 
+  shell: kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: res
+
+- set_fact:
+    INGRESS_HOST_IP: "{{res.stdout}}"
+    JAEGAR_PORT: 15032
+    GRAFANA_PORT: 15031
+  when: res.stdout | length > 0 and res.rc == 0
+
+- name: check Istio-Ingressgateway is in pending state , if it is not able to fetch LoadBalancerIP
+  shell: kubectl -n istio-system get service istio-ingressgateway | grep pending
+  register: r
+  when: res.stdout | length <= 0
+
+- name: fetch node port ip , since external IP is in pening state 
+  shell: kubectl get po -l istio=ingressgateway -n istio-system -o jsonpath='{.items[0].status.hostIP}'
+  register: nodePortIP
+  when: res.stdout | length <= 0 
+
+- set_fact:
+    INGRESS_HOST_IP: "{{nodePortIP.stdout}}" 
+  failed_when: nodePortIP.stdout | length <= 0
+  when: res.stdout | length <= 0
+
+- name: Fetch grafana nodeport , since external ip is in pending state
+  shell: kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.spec.ports[?(@.name=="https-grafana")].nodePort}'
+  register: grafana_port
+  when: res.stdout | length <= 0
+
+- name: Fetch Jaegar nodeport , since external ip is in pending state
+  shell: kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.spec.ports[?(@.name=="https-tracing")].nodePort}'
+  register: Jaegar_port
+  when: res.stdout | length <= 0
+
+- set_fact:
+    GRAFANA_PORT: "{{grafana_port.stdout}}"
+  failed_when: grafana_port.stdout | length <=0
+  when: res.stdout | length <= 0
+
+- set_fact:
+    JAEGAR_PORT: "{{Jaegar_port.stdout}}"
+  failed_when: Jaegar_port.stdout | length <=0
+  when: res.stdout | length <= 0
+ 
+- name: write the url for both Grafana & Jaegar in kiali-dashboard-url file
+  copy:
+    dest: "{{role_path}}/../../output/kialiurls"
+    mode: '0777'
+    content: |
+      Jaegar url: http://{{INGRESS_HOST_IP}}:{{JAEGAR_PORT}}
+      Grafana ur: http://localhost:{{GRAFANA_PORT}} 
+- name: Expose grafana , Jaegar & kaili outside
+  shell: "kubectl apply -f {{ item }}"
+  args:
+    chdir: "{{role_path}}/files"
+  with_items:
+    - kiali-post.yaml
+    - grafana-post.yaml
+    - tracing-post.yaml

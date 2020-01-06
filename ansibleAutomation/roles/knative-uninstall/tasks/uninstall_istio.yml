@@ -1,0 +1,80 @@
+- name: Execute the block when sidecar is enabled
+  block:
+  - name: check file (istio.yaml) exists
+    stat:
+      path: "{{istio_path}}/istio.yaml"
+    register: stat_result
+
+  - name: fail the play if file doesnot exists
+    fail:
+      msg: "{{istio_path}}/istio.yaml does not exists"
+    when: 
+      - stat_result.stat.exists == False
+
+  - name: Delete default istio when sidecar enabled
+    shell: "kubectl delete -f istio.yaml"
+    args:
+      chdir: "{{istio_path}}"
+    ignore_errors: true
+  when: not sidecar_disable
+
+- name: Execute the block when sidecar is disabled
+  block:
+  - name: check file (istio-lean.yaml) exists
+    stat:
+      path: "{{istio_path}}/istio-lean.yaml"
+    register: stat_result
+
+  - name: fail the play if file doesnot exists
+    fail:
+      msg: "{{istio_path}}/istio-lean.yaml does not exists"
+    when:
+      - stat_result.stat.exists == False
+  
+  - name: Delete default istio when sidecar disabled
+    shell: "kubectl delete -f istio-lean.yaml"
+    args:
+      chdir: "{{istio_path}}"
+    ignore_errors: true
+  when: sidecar_disable
+
+- name: remove any daemonset , replica ,svc for {{ns_name}}
+  shell: "kubectl -n {{ns_name}} delete po,svc,daemonsets,replicasets,deployments,rc,secrets --all"
+  ignore_errors: true
+
+- name: Delete namespace
+  include_tasks: delete_namespace.yml
+
+- pause: seconds=5
+
+- name: verify if all pods are deleted
+  shell: "kubectl get pods -n {{ns_name}} | wc -l "
+  register: pod_cnt
+  until: pod_cnt.stdout == "0"
+  retries: 5
+  delay: 5
+  ignore_errors: true
+
+- name: List down the pods ( if failed after waiting 30 seconds )
+  shell: "kubectl get pods -n {{ns_name}}"
+  register: pod_status
+  when: pod_cnt.stdout != "0"
+
+
+- name: Delete istio crds
+  shell: "for i in install/kubernetes/helm/istio-init/files/crd*yaml; do kubectl delete -f $i; done"
+  args:
+    chdir: "{{istio_path}}"
+  ignore_errors: true 
+
+- name: verify if crds is deleted 
+  shell: "kubectl get crds | grep -E 'istio.io|certmanager.k8s.io' | wc -l"
+  register: crd_count
+  until: crd_count.stdout == "0" 
+  retries: 5
+  delay: 5
+
+- name: Cleanup istio folder
+  shell: "rm -rf istio-{{istio_version}}"
+  args:
+    chdir: "{{istio_dir}}"

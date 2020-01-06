@@ -1,0 +1,24 @@
+# Create a namespace if it doesn't exist
+# The name of the namespace to create is given in variable ns_name
+
+- name: Check if namespace exists
+  shell: "kubectl get namespace/{{ ns_name }}"
+  ignore_errors: true
+  register: r
+
+- name: copy istio namespace.yaml file , if it doesnot exists  
+  copy:
+    src: 'files/namespace.yml'
+    dest: "{{istio_path}}/namespace.yaml"
+    mode: '0777'
+  when: 
+    - r.stderr != ""
+    - r.stderr.find("NotFound") != -1
+    
+- name: apply namespace {{ ns_name }}
+  shell: "kubectl apply -f namespace.yaml"
+  args:
+    chdir: "{{istio_path}}"
+  when:
+    - r.stderr != ""
+    - r.stderr.find("NotFound") != -1

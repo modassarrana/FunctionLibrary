@@ -1,0 +1,14 @@
+
+- name: install istio on kubernetes cluster as pre-requisites for knative
+  include_tasks: install_istio.yml
+
+- pause: seconds=15
+
+- name: install modified knative on kubernetes clutser , if istio is installed properly
+  include_tasks: install_knative_for_kiali.yml
+  when: profile == "kiali"
+
+- name: install default knative on kubernetes clutser , if istio is installed properly
+  include_tasks: install_knative.yml
+  when: profile == "default"
+  
